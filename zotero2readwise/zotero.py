@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from json import dump
 from os import environ
-from typing import Dict, List, Optional
+from typing import Optional
 
 from pyzotero.zotero import Zotero
-from pyzotero.zotero_errors import ParamNotPassed, UnsupportedParams
+from pyzotero.zotero_errors import ParamNotPassedError, UnsupportedParamsError
 
 from zotero2readwise import FAILED_ITEMS_DIR
 
@@ -17,18 +17,18 @@ class ZoteroItem:
     text: str
     annotated_at: str
     annotation_url: str
-    comment: Optional[str] = None
-    title: Optional[str] = None
-    tags: Optional[List[str]] = field(init=True, default=None)
-    document_tags: Optional[List[Dict]] = field(init=True, default=None)
-    document_type: Optional[int] = None
-    annotation_type: Optional[str] = None
-    creators: Optional[str] = field(init=True, default=None)
-    source_url: Optional[str] = None
-    attachment_url: Optional[str] = None
-    page_label: Optional[str] = None
-    color: Optional[str] = None
-    relations: Optional[Dict] = field(init=True, default=None)
+    comment: str | None = None
+    title: str | None = None
+    tags: list[str] | None = field(init=True, default=None)
+    document_tags: list[dict] | None = field(init=True, default=None)
+    document_type: int | None = None
+    annotation_type: str | None = None
+    creators: str | None = field(init=True, default=None)
+    source_url: str | None = None
+    attachment_url: str | None = None
+    page_label: str | None = None
+    color: str | None = None
+    relations: dict | None = field(init=True, default=None)
 
     def __post_init__(self):
         # Convert [{'tag': 'abc'}, {'tag': 'def'}] -->  ['abc', 'def']
@@ -41,7 +41,7 @@ class ZoteroItem:
         # Sample {'dc:relation': ['http://zotero.org/users/123/items/ABC', 'http://zotero.org/users/123/items/DEF']}
         if self.relations:
             self.relations = self.relations.get("dc:relation")
-        
+
         if self.creators:
             et_al = "et al."
             max_length = 1024 - len(et_al)
@@ -54,13 +54,14 @@ class ZoteroItem:
                 creators_str += et_al
             self.creators = creators_str
 
-
-    def get_nonempty_params(self) -> Dict:
+    def get_nonempty_params(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v}
 
 
 def get_zotero_client(
-    library_id: str = None, api_key: str = None, library_type: str = "user"
+    library_id: str | None = None,
+    api_key: str | None = None,
+    library_type: str = "user",
 ) -> Zotero:
     """Create a Zotero client object from Pyzotero library
 
@@ -86,7 +87,7 @@ def get_zotero_client(
         try:
             library_id = environ["ZOTERO_LIBRARY_ID"]
         except KeyError:
-            raise ParamNotPassed(
+            raise ParamNotPassedError(
                 "No value for library_id is found. "
                 "You can set it as an environment variable `ZOTERO_LIBRARY_ID` or use `library_id` to set it."
             )
@@ -95,7 +96,7 @@ def get_zotero_client(
         try:
             api_key = environ["ZOTERO_KEY"]
         except KeyError:
-            raise ParamNotPassed(
+            raise ParamNotPassedError(
                 "No value for api_key is found. "
                 "You can set it as an environment variable `ZOTERO_KEY` or use `api_key` to set it."
             )
@@ -103,7 +104,9 @@ def get_zotero_client(
     if library_type is None:
         library_type = environ.get("LIBRARY_TYPE", "user")
     elif library_type not in ["user", "group"]:
-        raise UnsupportedParams("library_type value can either be 'user' or 'group'.")
+        raise UnsupportedParamsError(
+            "library_type value can either be 'user' or 'group'."
+        )
 
     return Zotero(
         library_id=library_id,
@@ -113,18 +116,18 @@ def get_zotero_client(
 
 
 class ZoteroAnnotationsNotes:
-    def __init__(self, zotero_client: Zotero, filter_colors: List[str]):
+    def __init__(self, zotero_client: Zotero, filter_colors: list[str]):
         self.zot = zotero_client
-        self.failed_items: List[Dict] = []
-        self._cache: Dict = {}
-        self._parent_mapping: Dict = {}
-        self.filter_colors: List[str] = filter_colors
+        self.failed_items: list[dict] = []
+        self._cache: dict = {}
+        self._parent_mapping: dict = {}
+        self.filter_colors: list[str] = filter_colors
 
-    def get_item_metadata(self, annot: Dict) -> Dict:
+    def get_item_metadata(self, annot: dict) -> dict:
         data = annot["data"]
         # A Zotero annotation or note must have a parent with parentItem key.
         parent_item_key = data["parentItem"]
-        
+
         if parent_item_key in self._parent_mapping:
             top_item_key = self._parent_mapping[parent_item_key]
             if top_item_key in self._cache:
@@ -158,13 +161,16 @@ class ZoteroAnnotationsNotes:
                 creator["firstName"] + " " + creator["lastName"]
                 for creator in data["creators"]
             ]
-        if "attachment" in top_item["links"] and top_item["links"]["attachment"]["attachmentType"] == "application/pdf":
+        if (
+            "attachment" in top_item["links"]
+            and top_item["links"]["attachment"]["attachmentType"] == "application/pdf"
+        ):
             metadata["attachment_url"] = top_item["links"]["attachment"]["href"]
 
         self._cache[top_item_key] = metadata
         return metadata
 
-    def format_item(self, annot: Dict) -> ZoteroItem:
+    def format_item(self, annot: dict) -> ZoteroItem:
         data = annot["data"]
         item_type = data["itemType"]
         annotation_type = data.get("annotationType")
@@ -214,7 +220,7 @@ class ZoteroAnnotationsNotes:
             relations=data["relations"],
         )
 
-    def format_items(self, annots: List[Dict]) -> List[ZoteroItem]:
+    def format_items(self, annots: list[dict]) -> list[ZoteroItem]:
         formatted_annots = []
         print(
             f"ZOTERO: Start formatting {len(annots)} annotations/notes...\n"
@@ -223,9 +229,12 @@ class ZoteroAnnotationsNotes:
         )
         for annot in annots:
             try:
-                if len(self.filter_colors) == 0 or annot["data"]["annotationColor"] in self.filter_colors:
+                if (
+                    len(self.filter_colors) == 0
+                    or annot["data"]["annotationColor"] in self.filter_colors
+                ):
                     formatted_annots.append(self.format_item(annot))
-            except:
+            except Exception:
                 self.failed_items.append(annot)
                 continue
 

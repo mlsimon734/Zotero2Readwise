@@ -24,18 +24,14 @@ jobs:
         with:
           python-version: '3.8'
       
-      - name: 💻 Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: 💻 Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
 
-      - name: ⚙️ Configure Poetry
-        run: |
-          poetry config virtualenvs.create false
-          poetry config virtualenvs.in-project false
-
-      - name: Install dependencies with Poetry
-        run: poetry install --no-root
+      - name: ⚙️ Install dependencies with uv
+        run: uv sync --dev
 
       - name: 🐍 Python Semantic Release
         id: srelease
@@ -50,8 +46,8 @@ jobs:
           echo "New version: ${{ steps.srelease.outputs.new_version }}"
           echo "Version change: ${{ steps.srelease.outputs.version_change }}"
 
-      - name: 🛠️ Build distributions with Poetry
-        run: poetry build
+      - name: 🛠️ Build distributions with uv
+        run: uv build
         if: steps.srelease.outputs.released == 'true'
 
       - name: 🚀 Publish to PyPI
