@@ -1,6 +1,6 @@
 [project]
 name = "zotero2readwise"
-version = "0.4.5"
+version = "1.0.0"
 description = "Export your Zotero annotations and notes to Readwise"
 authors = [{ name = "ealizadeh", email = "hello@ealizadeh.com" }]
 requires-python = ">=3.10"
